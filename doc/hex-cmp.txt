@@ -1,0 +1,203 @@
+*hex-cmp.txt*	Hex.pm completion source for blink.cmp
+
+Author:  David Bernheisel
+License: MIT
+
+==============================================================================
+CONTENTS                                                    *hex-cmp-contents*
+
+    1. Introduction .......................... |hex-cmp-introduction|
+    2. Requirements .......................... |hex-cmp-requirements|
+    3. Installation .......................... |hex-cmp-installation|
+    4. Configuration ......................... |hex-cmp-configuration|
+    5. Hover ................................. |hex-cmp-hover|
+    6. Completions ........................... |hex-cmp-completions|
+    7. Health ................................ |hex-cmp-health|
+
+==============================================================================
+1. INTRODUCTION                                         *hex-cmp-introduction*
+
+hex-cmp is a |blink.cmp| completion source that provides hex.pm package
+completion in Elixir `mix.exs` files.
+
+Features:
+
+- Package name completion — search hex.pm as you type
+- Version completion — `~>` fuzzy and exact versions, retired versions marked
+- Dependency opts completion — all Mix.Project dependency options
+- Signature help — `{app, requirement, opts}` with documentation
+- Hover — package info via an in-process LSP (works with |K|)
+- Disk cache — responses cached with TTL, stale cache on API failure
+
+hex-cmp uses treesitter to detect when the cursor is inside a `defp deps`
+(or `def deps`) function in `mix.exs`. Based on the cursor position within
+the dep tuple:
+
+    Position    Completion          Source ~
+    1 — :app    Package names       hex.pm search API
+    2 — "req"   ~> and exact vers   hex.pm package API
+    3+ — opts   Dependency keywords Static (Mix.Project docs)
+
+==============================================================================
+2. REQUIREMENTS                                         *hex-cmp-requirements*
+
+- Neovim >= 0.10
+- blink.cmp (https://github.com/saghen/blink.cmp)
+- tree-sitter-elixir (https://github.com/elixir-lang/tree-sitter-elixir)
+- `curl` on PATH
+
+==============================================================================
+3. INSTALLATION                                         *hex-cmp-installation*
+
+With lazy.nvim, add hex-cmp as a dependency of blink.cmp:
+>lua
+    {
+      'saghen/blink.cmp',
+      dependencies = {
+        'dbernheisel/hex-cmp',
+      },
+      opts = {
+        sources = {
+          per_filetype = {
+            elixir = { inherit_defaults = true, 'hex' },
+          },
+          providers = {
+            hex = {
+              name = "hex",
+              module = "hex_cmp",
+              async = true,
+            },
+          },
+        },
+      },
+    }
+<
+
+==============================================================================
+4. CONFIGURATION                                       *hex-cmp-configuration*
+
+                                                          *hex-cmp-opts*
+Options can be passed via the provider `opts` table:
+>lua
+    hex = {
+      name = "hex",
+      module = "hex_cmp",
+      async = true,
+      opts = {
+        cache_ttl = 600,    -- seconds (default: 600)
+        max_results = 50,   -- max search results (default: 50)
+      },
+    }
+<
+
+                                                          *hex-cmp-cache_ttl*
+cache_ttl ~
+    Type: `integer`
+    Default: `600`
+
+    How long (in seconds) API responses are cached to disk before becoming
+    stale. Stale cache is still served as a fallback when the API is
+    unreachable.
+
+    Cache is stored at `vim.fn.stdpath('cache') .. '/hex-cmp/'`.
+
+                                                          *hex-cmp-max_results*
+max_results ~
+    Type: `integer`
+    Default: `50`
+
+    Maximum number of packages returned from hex.pm search API.
+
+==============================================================================
+5. HOVER                                                     *hex-cmp-hover*
+
+                                                          *hex-cmp.hover.attach()*
+`require('hex_cmp.hover').attach({bufnr})`
+
+    Attach the hex-cmp hover LSP to a buffer. This starts a lightweight
+    in-process LSP that only provides |textDocument/hover| for hex packages.
+    It works alongside your existing Elixir LSP — |vim.lsp.buf.hover()| (|K|)
+    queries all attached clients.
+
+    Call this from your LSP `on_attach` callback:
+>lua
+    local bufname = vim.api.nvim_buf_get_name(bufnr)
+    if bufname:match('mix%.exs$') then
+      require('hex_cmp.hover').attach(bufnr)
+    end
+<
+
+    The hover response includes:
+
+    - Package name
+    - Description
+    - Latest stable version
+    - Download counts
+    - License
+    - Links (docs, GitHub, etc.)
+
+==============================================================================
+6. COMPLETIONS                                           *hex-cmp-completions*
+
+Completions are triggered automatically when editing inside a `defp deps` or
+`def deps` function in a `mix.exs` file. The treesitter parser determines
+cursor position within the dependency tuple.
+
+                                                *hex-cmp-package-completion*
+Package name completion ~
+
+    Triggered in the first position of a dep tuple (`:app`). Searches the
+    hex.pm API as you type. Requires at least 1 character.
+
+    Example: typing `{:pho` will search for packages starting with "pho".
+
+                                                *hex-cmp-version-completion*
+Version completion ~
+
+    Triggered in the second position after a comma and space. Fetches all
+    releases for the package from hex.pm.
+
+    Two types of versions are offered:
+
+    - `~>` fuzzy versions — grouped by major.minor, non-retired only
+    - Exact versions — all versions with dates, retired versions marked
+
+    Retired versions are shown with a `RETIRED` label and strikethrough
+    (if supported by your UI). Retirement reason and message are shown
+    in the documentation popup.
+
+                                                *hex-cmp-opts-completion*
+Dependency opts completion ~
+
+    Triggered in position 3 and beyond. Offers all Mix.Project dependency
+    options as keyword completions:
+
+    General:    `only:` `targets:` `optional:` `runtime:` `override:`
+                `app:` `env:` `compile:` `manager:` `system_env:`
+    Path:       `path:` `in_umbrella:`
+    Hex:        `hex:` `repo:`
+    Git:        `git:` `github:` `ref:` `branch:` `tag:`
+                `submodules:` `sparse:` `subdir:` `depth:`
+
+                                                *hex-cmp-signature-help*
+Signature help ~
+
+    Displays `{app, requirement, opts}` signature with the active parameter
+    highlighted. Shows package description, latest version, downloads,
+    license, and links in the signature documentation.
+
+    Trigger characters: `{` and `,`
+
+==============================================================================
+7. HEALTH                                                   *hex-cmp-health*
+
+Run `:checkhealth hex_cmp` to verify your setup. The health check verifies:
+
+- Neovim >= 0.10
+- `curl` is available on PATH
+- tree-sitter-elixir parser is installed
+- blink.cmp is installed
+- hex.pm API is reachable
+
+==============================================================================
+vim:tw=78:ts=8:ft=help:norl:
