@@ -2,6 +2,10 @@
 
 [blink.cmp](https://github.com/saghen/blink.cmp) source for [hex.pm](https://hex.pm) package completion in Elixir `mix.exs` files.
 
+![Package name completion](package-completion-example.png)
+
+![Version completion](version-completion-example.png)
+
 ## Features
 
 - **Package name completion** — search hex.pm as you type in the first position of a dep tuple
