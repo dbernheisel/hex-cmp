@@ -1,58 +1,40 @@
 local treesitter = require('hex_cmp.treesitter')
 local api = require('hex_cmp.api')
+local items = require('hex_cmp.items')
 
 ---@class hex_cmp.Hover
 local M = {}
 
---- Format a number with comma grouping (e.g. 1234567 -> "1,234,567").
----@param n integer
----@return string
-local function format_number(n)
-  local s = tostring(n)
-  return s:reverse():gsub('(%d%d%d)', '%1,'):reverse():gsub('^,', '')
+--- Handle a textDocument/hover LSP request for hex packages.
+--- Shared implementation used by both the standalone hover server and the native server.
+---@param params lsp.HoverParams
+---@param callback fun(err: any?, result: lsp.Hover?)
+function M.handle(params, callback)
+  local uri = params.textDocument.uri
+  local bufnr = vim.uri_to_bufnr(uri)
+
+  local ctx = treesitter.get_context(bufnr)
+  if not ctx or not ctx.package_name or ctx.package_name == '' then
+    callback(nil, nil)
+    return
+  end
+
+  api.get_package(ctx.package_name, function(pkg)
+    if not pkg then
+      callback(nil, nil)
+      return
+    end
+
+    callback(nil, {
+      contents = {
+        kind = 'markdown',
+        value = items.build_hover_content(pkg),
+      },
+    })
+  end)
 end
 
---- Build markdown hover content for a hex package.
----@param pkg hex_cmp.HexPackage
----@return string
-local function build_hover_content(pkg)
-  local parts = { '# ' .. pkg.name }
-
-  if pkg.meta and pkg.meta.description then
-    parts[#parts + 1] = pkg.meta.description
-  end
-
-  if pkg.latest_stable_version then
-    parts[#parts + 1] = '**Latest:** ' .. pkg.latest_stable_version
-  end
-
-  if pkg.downloads then
-    local dl = {}
-    if pkg.downloads.all then
-      dl[#dl + 1] = format_number(pkg.downloads.all) .. ' total'
-    end
-    if pkg.downloads.recent then
-      dl[#dl + 1] = format_number(pkg.downloads.recent) .. ' recent'
-    end
-    if #dl > 0 then
-      parts[#parts + 1] = '**Downloads:** ' .. table.concat(dl, ', ')
-    end
-  end
-
-  if pkg.meta and pkg.meta.licenses and #pkg.meta.licenses > 0 then
-    parts[#parts + 1] = '**License:** ' .. table.concat(pkg.meta.licenses, ', ')
-  end
-
-  if pkg.meta and pkg.meta.links then
-    for name, url in pairs(pkg.meta.links) do
-      parts[#parts + 1] = '[' .. name .. '](' .. url .. ')'
-    end
-  end
-
-  return table.concat(parts, '\n\n')
-end
-
---- Create the in-process LSP server function.
+--- Create the in-process LSP server function (hover-only, for pre-0.12).
 ---@return fun(dispatchers: vim.lsp.rpc.Dispatchers): vim.lsp.rpc.PublicClient
 local function make_server()
   return function(dispatchers)
@@ -70,28 +52,7 @@ local function make_server()
             },
           })
         elseif method == 'textDocument/hover' then
-          local uri = params.textDocument.uri
-          local bufnr = vim.uri_to_bufnr(uri)
-
-          local ctx = treesitter.get_context(bufnr)
-          if not ctx or not ctx.package_name or ctx.package_name == '' then
-            callback(nil, nil)
-            return true, request_id
-          end
-
-          api.get_package(ctx.package_name, function(pkg)
-            if not pkg then
-              callback(nil, nil)
-              return
-            end
-
-            callback(nil, {
-              contents = {
-                kind = 'markdown',
-                value = build_hover_content(pkg),
-              },
-            })
-          end)
+          M.handle(params, callback)
         elseif method == 'shutdown' then
           callback(nil, nil)
         else
@@ -127,8 +88,8 @@ end
 --- textDocument/hover for hex packages. It works alongside your
 --- existing LSP — vim.lsp.buf.hover() (K) queries all clients.
 ---
---- On Neovim 0.12+, prefer `require('hex_cmp.native').attach(bufnr)` which
---- provides hover, completion, inline completion, and signature help in one server.
+--- On Neovim 0.12+, delegates to `hex_cmp.native` which provides
+--- hover, completion, inline completion, and signature help in one server.
 ---@param bufnr integer Buffer number to attach to
 function M.attach(bufnr)
   -- On Neovim 0.12+, delegate to the native module for a unified LSP server
