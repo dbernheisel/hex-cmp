@@ -6,6 +6,8 @@
 local M = {}
 
 --- Whether the native Neovim HTTP client is available (0.12+).
+--- vim.net.request(url, opts?, callback?) shells out to curl internally
+--- but provides a nicer Lua API with retry support.
 ---@type boolean
 M.has_native = vim.fn.has('nvim-0.12') == 1
   and type(vim.net) == 'table'
@@ -24,15 +26,14 @@ function M.get(url, headers, callback)
 end
 
 --- Native HTTP implementation using vim.net.request (Neovim 0.12+).
+--- Signature: vim.net.request(url, opts?, on_response?)
+--- The response callback receives (err?: string, response?: {body: string}).
+--- Note: vim.net.request does not support custom headers — they are ignored here.
 ---@param url string
----@param headers? table<string, string>
+---@param headers? table<string, string> Ignored (vim.net.request doesn't support headers)
 ---@param callback fun(data: any?, err: string?)
 function M._get_native(url, headers, callback)
-  vim.net.request({
-    url = url,
-    method = 'GET',
-    headers = headers or {},
-  }, function(err, response)
+  vim.net.request(url, {}, function(err, response)
     vim.schedule(function()
       if err then
         callback(nil, 'HTTP request failed: ' .. tostring(err))
@@ -40,10 +41,6 @@ function M._get_native(url, headers, callback)
       end
       if not response or not response.body or response.body == '' then
         callback(nil, 'empty response')
-        return
-      end
-      if response.status and response.status ~= 200 then
-        callback(nil, 'HTTP ' .. response.status)
         return
       end
       local ok, data = pcall(vim.json.decode, response.body)
@@ -101,11 +98,8 @@ function M.check_connectivity()
     local ok = false
     local done = false
 
-    vim.net.request({
-      url = test_url,
-      method = 'GET',
-    }, function(err, response)
-      if not err and response and response.status == 200 then
+    vim.net.request(test_url, {}, function(err, response)
+      if not err and response and response.body and response.body ~= '' then
         ok = true
       end
       done = true

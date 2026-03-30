@@ -127,9 +127,6 @@ function M.get_package(name, callback)
     elseif cached then
       callback(cached)
     else
-      if err then
-        vim.notify('[hex-cmp] ' .. err, vim.log.levels.WARN)
-      end
       callback(nil)
     end
   end)

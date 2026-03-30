@@ -124,10 +124,10 @@ function M.make_version_items(releases, retirements)
     local doc = nil
     if retired and type(retirement_info) == 'table' then
       local doc_parts = {}
-      if retirement_info.reason then
+      if type(retirement_info.reason) == 'string' then
         doc_parts[#doc_parts + 1] = '**Retired:** ' .. retirement_info.reason
       end
-      if retirement_info.message then
+      if type(retirement_info.message) == 'string' then
         doc_parts[#doc_parts + 1] = retirement_info.message
       end
       if #doc_parts > 0 then

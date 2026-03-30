@@ -1,6 +1,8 @@
 # hex-cmp
 
-[blink.cmp](https://github.com/saghen/blink.cmp) source for [hex.pm](https://hex.pm) package completion in Elixir `mix.exs` files.
+Hex.pm package completion for Elixir `mix.exs` files.
+
+On Neovim 0.12+, works standalone using built-in LSP completion. On older versions, works as a [blink.cmp](https://github.com/saghen/blink.cmp) source. Also works with blink.cmp on 0.12+.
 
 ![Package name completion](package-completion-example.png)
 
@@ -18,13 +20,27 @@
 ## Requirements
 
 - Neovim >= 0.10
-- [blink.cmp](https://github.com/saghen/blink.cmp)
 - [tree-sitter-elixir](https://github.com/elixir-lang/tree-sitter-elixir) parser
-- `curl` on PATH
+- **Neovim 0.12+**: no other dependencies needed
+- **Neovim 0.10–0.11**: [blink.cmp](https://github.com/saghen/blink.cmp) and `curl` on PATH
 
 ## Installation
 
-### lazy.nvim
+### Neovim 0.12+ (standalone)
+
+No completion framework needed — hex-cmp auto-attaches to `mix.exs` buffers:
+
+```lua
+{ 'dbernheisel/hex-cmp' }
+```
+
+For documentation popups on completion items, add `popup` to your `completeopt`:
+
+```lua
+vim.opt.completeopt:append('popup')
+```
+
+### With blink.cmp (any version)
 
 Add hex-cmp as a dependency of blink.cmp:
 
@@ -47,15 +63,14 @@ Add hex-cmp as a dependency of blink.cmp:
 }
 ```
 
-### Hover
+### Hover (pre-0.12 with blink.cmp)
 
-Add this to your LSP `on_attach` to get hex package info on `lsp.hover`
-(typically mapped to `K`):
+On Neovim 0.12+, hover is included automatically. On older versions with blink.cmp, add this to your LSP `on_attach` for hex package info on `K`:
 
 ```lua
 local bufname = vim.api.nvim_buf_get_name(bufnr)
 if bufname:match('mix%.exs$') then
-  require('hex_cmp.hover').attach(bufnr)
+  require('hex_cmp').attach(bufnr)
 end
 ```
 
@@ -63,9 +78,16 @@ This starts a lightweight in-process LSP that only provides `textDocument/hover`
 
 ## Configuration
 
-Options can be passed via the provider `opts`:
+Options can be passed via `setup()` or the blink.cmp provider `opts`:
 
 ```lua
+-- Via setup():
+require('hex_cmp').setup({
+  cache_ttl = 1800,    -- seconds (default: 1800 - 30 minutes)
+  max_results = 50,    -- max search results (default: 50)
+})
+
+-- Or via blink.cmp provider opts:
 hex = {
   name = "hex",
   module = "hex_cmp",
