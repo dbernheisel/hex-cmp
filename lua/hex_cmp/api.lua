@@ -1,4 +1,5 @@
 local cache = require('hex_cmp.cache')
+local http = require('hex_cmp.http')
 
 ---@class hex_cmp.ApiConfig
 ---@field max_results integer Max search results (default 50)
@@ -56,32 +57,12 @@ local function url_encode(str)
   end)
 end
 
---- Run curl asynchronously and return parsed JSON via callback.
+--- Perform an async GET request against the hex.pm API and return parsed JSON.
+--- Uses native HTTP on Neovim 0.12+, falls back to curl on older versions.
 ---@param url string
 ---@param callback fun(data: any?, err: string?)
-local function curl(url, callback)
-  vim.system(
-    { 'curl', '-sS', '-H', 'User-Agent: ' .. config.user_agent, url },
-    { text = true },
-    function(result)
-      vim.schedule(function()
-        if result.code ~= 0 then
-          callback(nil, 'curl exited with code ' .. result.code .. ': ' .. (result.stderr or ''))
-          return
-        end
-        if not result.stdout or result.stdout == '' then
-          callback(nil, 'empty response')
-          return
-        end
-        local ok, data = pcall(vim.json.decode, result.stdout)
-        if not ok then
-          callback(nil, 'JSON decode failed: ' .. tostring(data))
-          return
-        end
-        callback(data, nil)
-      end)
-    end
-  )
+local function fetch(url, callback)
+  http.get(url, { ['User-Agent'] = config.user_agent }, callback)
 end
 
 --- Search hex.pm packages by name prefix.
@@ -106,7 +87,7 @@ function M.search_packages(query, callback)
     config.max_results
   )
 
-  curl(url, function(data, err)
+  fetch(url, function(data, err)
     if data and type(data) == 'table' then
       cache.set(cache_key, data)
       callback(data)
@@ -139,7 +120,7 @@ function M.get_package(name, callback)
 
   local url = 'https://hex.pm/api/packages/' .. url_encode(name)
 
-  curl(url, function(data, err)
+  fetch(url, function(data, err)
     if data and type(data) == 'table' and data.name then
       cache.set(cache_key, data)
       callback(data)
