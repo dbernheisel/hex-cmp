@@ -2,8 +2,9 @@
 ---
 --- Configure in blink.cmp:
 ---
----   hex = { name = "hex", module = "hex_cmp.blink", async = true }
+---   hex = { name = "hex", module = "hex_cmp", async = true }
 ---
+--- Can also be referenced directly as "hex_cmp.blink".
 ---@class hex_cmp.BlinkSource : blink.cmp.Source
 local source = {}
 

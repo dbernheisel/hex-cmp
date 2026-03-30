@@ -1,25 +1,23 @@
 --- hex-cmp: hex.pm package completion for Elixir mix.exs files.
 ---
---- Setup and attach entry point. On Neovim 0.12+, uses built-in LSP completion
---- and native HTTP. On older versions, works with blink.cmp and curl.
+--- On Neovim 0.12+, uses built-in LSP completion and native HTTP.
+--- On older versions, serves as a blink.cmp source (module = "hex_cmp")
+--- with curl for HTTP.
 ---
---- Quick start:
+--- Quick start (Neovim 0.12+, no blink.cmp needed):
 ---
----   -- Option A: Neovim 0.12+ (no blink.cmp needed)
 ---   require('hex_cmp').setup()
 ---
----   -- Option B: blink.cmp (any Neovim >= 0.10)
----   -- In your blink.cmp providers:
----   --   hex = { name = "hex", module = "hex_cmp.blink", async = true }
----   -- Then for hover, in your LSP on_attach:
----   --   require('hex_cmp.hover').attach(bufnr)
+--- Quick start (pre-0.12 with blink.cmp):
 ---
----@class hex_cmp
-local M = {}
+---   -- In your blink.cmp providers:
+---   hex = { name = "hex", module = "hex_cmp", async = true }
+---   -- For hover, in your LSP on_attach:
+---   require('hex_cmp').attach(bufnr)
 
 --- Apply configuration to cache and API modules.
 ---@param opts? { cache_ttl?: integer, max_results?: integer }
-function M.setup(opts)
+local function setup(opts)
   opts = opts or {}
   if opts.cache_ttl then
     require('hex_cmp.cache').setup({ ttl = opts.cache_ttl })
@@ -36,7 +34,7 @@ function M.setup(opts)
       callback = function(ev)
         local bufname = vim.api.nvim_buf_get_name(ev.buf)
         if bufname:match('mix%.exs$') then
-          M.attach(ev.buf)
+          require('hex_cmp.native').attach(ev.buf)
         end
       end,
     })
@@ -49,7 +47,7 @@ end
 --- completion + hover + signature help). On older versions, starts the
 --- hover-only LSP server.
 ---@param bufnr integer Buffer number to attach to
-function M.attach(bufnr)
+local function attach(bufnr)
   if vim.fn.has('nvim-0.12') == 1 then
     require('hex_cmp.native').attach(bufnr)
   else
@@ -57,4 +55,13 @@ function M.attach(bufnr)
   end
 end
 
-return M
+-- On pre-0.12, return the blink.cmp source with setup/attach mixed in,
+-- so module = "hex_cmp" keeps working. On 0.12+, return a plain setup module.
+if vim.fn.has('nvim-0.12') == 1 then
+  return { setup = setup, attach = attach }
+else
+  local source = require('hex_cmp.blink')
+  source.setup = setup
+  source.attach = attach
+  return source
+end
