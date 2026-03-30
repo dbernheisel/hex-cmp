@@ -1,20 +1,18 @@
 --- Native LSP completion and hover provider for Neovim >= 0.12.
 ---
---- On Neovim 0.12+, this module provides an in-process LSP server that handles
---- textDocument/completion, textDocument/inlineCompletion, and textDocument/hover,
+--- Provides an in-process LSP server that handles textDocument/completion,
+--- textDocument/inlineCompletion, textDocument/hover, and textDocument/signatureHelp,
 --- eliminating the need for blink.cmp and the separate hover module.
 ---
---- Usage:
----   require('hex_cmp.native').attach(bufnr)
+--- Typically called via `require('hex_cmp').attach(bufnr)` which auto-detects
+--- the Neovim version. Can also be used directly:
 ---
---- This enables vim.lsp.completion (built-in) and inline ghost-text completions,
---- plus hover support, all in one lightweight LSP server.
+---   require('hex_cmp.native').attach(bufnr)
 ---@class hex_cmp.Native
 local M = {}
 
 local treesitter = require('hex_cmp.treesitter')
 local api = require('hex_cmp.api')
-local cache_mod = require('hex_cmp.cache')
 local items = require('hex_cmp.items')
 local hover = require('hex_cmp.hover')
 
@@ -203,30 +201,9 @@ local function make_server()
 end
 
 --- Attach the native hex-cmp LSP server to a buffer.
----
---- On Neovim 0.12+, this provides completion, inline completion, hover,
---- and signature help without needing blink.cmp.
----
---- Usage from your config:
----
----   vim.api.nvim_create_autocmd('BufRead', {
----     pattern = 'mix.exs',
----     callback = function(ev)
----       require('hex_cmp.native').attach(ev.buf)
----     end,
----   })
----
+--- Provides completion, inline completion, hover, and signature help.
 ---@param bufnr integer Buffer number to attach to
----@param opts? { cache_ttl?: integer, max_results?: integer } Optional configuration
-function M.attach(bufnr, opts)
-  opts = opts or {}
-  if opts.cache_ttl then
-    cache_mod.setup({ ttl = opts.cache_ttl })
-  end
-  if opts.max_results then
-    api.setup({ max_results = opts.max_results })
-  end
-
+function M.attach(bufnr)
   local client_id = vim.lsp.start({
     name = 'hex-cmp',
     cmd = make_server(),

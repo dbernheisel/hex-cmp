@@ -79,25 +79,16 @@ local function make_server()
   end
 end
 
---- Attach the hex-cmp hover LSP to a buffer.
---- Call from your LSP on_attach or an autocmd:
+--- Attach the hex-cmp hover-only LSP to a buffer (pre-0.12 fallback).
 ---
----   require('hex_cmp.hover').attach(bufnr)
+--- Prefer `require('hex_cmp').attach(bufnr)` which auto-detects
+--- Neovim version and uses the native server on 0.12+.
 ---
 --- This starts a lightweight in-process LSP that only provides
 --- textDocument/hover for hex packages. It works alongside your
 --- existing LSP — vim.lsp.buf.hover() (K) queries all clients.
----
---- On Neovim 0.12+, delegates to `hex_cmp.native` which provides
---- hover, completion, inline completion, and signature help in one server.
 ---@param bufnr integer Buffer number to attach to
 function M.attach(bufnr)
-  -- On Neovim 0.12+, delegate to the native module for a unified LSP server
-  if vim.fn.has('nvim-0.12') == 1 then
-    require('hex_cmp.native').attach(bufnr)
-    return
-  end
-
   vim.lsp.start({
     name = 'hex-cmp',
     cmd = make_server(),

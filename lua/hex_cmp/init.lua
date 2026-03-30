@@ -1,135 +1,60 @@
-local treesitter = require('hex_cmp.treesitter')
-local api = require('hex_cmp.api')
-local cache_mod = require('hex_cmp.cache')
-local items = require('hex_cmp.items')
+--- hex-cmp: hex.pm package completion for Elixir mix.exs files.
+---
+--- Setup and attach entry point. On Neovim 0.12+, uses built-in LSP completion
+--- and native HTTP. On older versions, works with blink.cmp and curl.
+---
+--- Quick start:
+---
+---   -- Option A: Neovim 0.12+ (no blink.cmp needed)
+---   require('hex_cmp').setup()
+---
+---   -- Option B: blink.cmp (any Neovim >= 0.10)
+---   -- In your blink.cmp providers:
+---   --   hex = { name = "hex", module = "hex_cmp.blink", async = true }
+---   -- Then for hover, in your LSP on_attach:
+---   --   require('hex_cmp.hover').attach(bufnr)
+---
+---@class hex_cmp
+local M = {}
 
----@class hex_cmp.Source : blink.cmp.Source
-local source = {}
-
----@type blink.cmp.CompletionResponse
-local EMPTY = { is_incomplete_forward = false, is_incomplete_backward = false, items = {} }
-
----@param opts? table Provider opts from sources.providers.hex.opts
----@param _config? table Full provider config
----@return hex_cmp.Source
-function source.new(opts, _config)
-  local self = setmetatable({}, { __index = source })
+--- Apply configuration to cache and API modules.
+---@param opts? { cache_ttl?: integer, max_results?: integer }
+function M.setup(opts)
   opts = opts or {}
   if opts.cache_ttl then
-    cache_mod.setup({ ttl = opts.cache_ttl })
+    require('hex_cmp.cache').setup({ ttl = opts.cache_ttl })
   end
   if opts.max_results then
-    api.setup({ max_results = opts.max_results })
-  end
-  return self
-end
-
---- Only enable in mix.exs buffers with treesitter-elixir available.
----@return boolean
-function source:enabled()
-  local bufname = vim.api.nvim_buf_get_name(0)
-  if not bufname:match('mix%.exs$') then
-    return false
-  end
-  return treesitter.has_parser()
-end
-
----@return string[]
-function source:get_trigger_characters()
-  return { '{', ':', '"', '.', ' ' }
-end
-
----@param ctx blink.cmp.Context
----@param callback fun(response?: blink.cmp.CompletionResponse)
----@return fun()? cancel Cancel function
-function source:get_completions(ctx, callback)
-  local ts_ctx = treesitter.get_context(ctx.bufnr)
-
-  if not ts_ctx or ts_ctx.position == 0 then
-    callback(EMPTY)
-    return
+    require('hex_cmp.api').setup({ max_results = opts.max_results })
   end
 
-  if ts_ctx.position == 1 then
-    -- Package name completion
-    local cursor_before = ctx.line:sub(1, ctx.cursor[2])
-    local query = items.extract_package_query(cursor_before)
+  -- On Neovim 0.12+, auto-attach to mix.exs buffers for native completion
+  if vim.fn.has('nvim-0.12') == 1 then
+    vim.api.nvim_create_autocmd('FileType', {
+      pattern = 'elixir',
+      group = vim.api.nvim_create_augroup('hex-cmp', { clear = true }),
+      callback = function(ev)
+        local bufname = vim.api.nvim_buf_get_name(ev.buf)
+        if bufname:match('mix%.exs$') then
+          M.attach(ev.buf)
+        end
+      end,
+    })
+  end
+end
 
-    if not query or #query < 1 then
-      callback({ is_incomplete_forward = true, is_incomplete_backward = false, items = {} })
-      return
-    end
-
-    api.search_packages(query, function(packages)
-      callback({ is_incomplete_forward = true, is_incomplete_backward = false, items = items.make_package_items(packages) })
-    end)
-
-  elseif ts_ctx.position == 2 then
-    -- Version completion — only after space following comma, not on the comma itself
-    local cursor_before = ctx.line:sub(1, ctx.cursor[2])
-    if not cursor_before:match(',%s+') then
-      callback(EMPTY)
-      return
-    end
-
-    if not ts_ctx.package_name or ts_ctx.package_name == '' then
-      callback(EMPTY)
-      return
-    end
-
-    api.get_package(ts_ctx.package_name, function(pkg)
-      if not pkg or not pkg.releases then
-        callback(EMPTY)
-        return
-      end
-      callback({ is_incomplete_forward = false, is_incomplete_backward = false, items = items.make_version_items(pkg.releases, pkg.retirements) })
-    end)
-
-  elseif ts_ctx.position >= 3 then
-    -- Opts completion
-    callback({ is_incomplete_forward = false, is_incomplete_backward = false, items = items.make_opts_items() })
-
+--- Attach hex-cmp to a buffer.
+---
+--- On Neovim 0.12+, starts the native LSP server (completion + inline
+--- completion + hover + signature help). On older versions, starts the
+--- hover-only LSP server.
+---@param bufnr integer Buffer number to attach to
+function M.attach(bufnr)
+  if vim.fn.has('nvim-0.12') == 1 then
+    require('hex_cmp.native').attach(bufnr)
   else
-    callback(EMPTY)
+    require('hex_cmp.hover').attach(bufnr)
   end
 end
 
----@param item blink.cmp.CompletionItem
----@param callback fun(resolved_item: blink.cmp.CompletionItem)
-function source:resolve(item, callback)
-  callback(item)
-end
-
----@return { trigger_characters: string[], retrigger_characters: string[] }
-function source:get_signature_help_trigger_characters()
-  return { trigger_characters = { '{', ',' }, retrigger_characters = { ',' } }
-end
-
---- Build an LSP SignatureHelp response for the current dep tuple.
----@param ctx blink.cmp.SignatureHelpContext
----@param callback fun(signature_help: lsp.SignatureHelp?)
-function source:get_signature_help(ctx, callback)
-  local ts_ctx = treesitter.get_context(ctx.bufnr)
-  if not ts_ctx or ts_ctx.position == 0 then
-    callback(nil)
-    return
-  end
-
-  local pkg_name = ts_ctx.package_name
-  if not pkg_name or pkg_name == '' then
-    callback(nil)
-    return
-  end
-
-  api.get_package(pkg_name, function(pkg)
-    if not pkg then
-      callback(nil)
-      return
-    end
-
-    local active_param = math.min(ts_ctx.position - 1, 2) -- 0-indexed, clamp to 0-2
-    callback(items.build_signature_help(pkg, active_param))
-  end)
-end
-
-return source
+return M
